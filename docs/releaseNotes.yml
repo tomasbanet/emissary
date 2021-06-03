@@ -86,6 +86,18 @@ items:
         body: >-
           The <code>AMBASSADOR_RECONFIG_MAX_DELAY</code> env var can be optionally set to batch changes for the specified 
           non-negative window period in seconds before doing an Envoy reconfiguration. Default is "1" if not set.
+      - title: Add option to enable envoy readiness endpoint from worker
+        type: feature
+        body: >-
+          /ready endpoint used by emissary is using the admin port (8001 by default).
+          This generates a problem during config reloads with large configs as the
+          admin thread is blocking so the /ready endpoint can be very slow to
+          answer (in the order of several seconds, even more).
+          The new feature allows to enable a specific envoy listener that can answer /ready calls
+          from the workers so the endpoint is always fast and it does not suffers from single threaded
+          admin thread slowness on config reloads and other slow endpoints handled by the admin thread
+          Configure the listener port using AMBASSADOR_READY_PORT and enable access log using
+          AMBASSADOR_READY_LOG environment variables.
 
   - version: 3.1.1
     prevVersion: 3.1.0
