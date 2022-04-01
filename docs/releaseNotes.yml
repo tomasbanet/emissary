@@ -91,6 +91,16 @@ items:
           <code>HTTP_JSON_V1</code> when explicitly setting the
           <code>AMBASSADOR_ENVOY_API_VERSION=V2</code> environment variable to force use of xDS v2
           to configure Envoy.
+      - title: Allow setting custom_tags for traces
+        type: feature
+        body: >-
+          It is now possible to set <code>custom_tags</code> in the
+          <code>TracingService</code>. Trace tags can be set based on
+          literal values, environment variables, or request headers.
+          (Thanks to <a href="https://github.com/psalaberria002">Paul</a>!)
+        github:
+          - title: "#4181"
+            link: https://github.com/emissary-ingress/emissary/pull/4181
 
   - version: 2.2.2
     date: '2022-02-25'

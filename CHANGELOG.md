@@ -118,8 +118,13 @@ it will be removed; but as it won't be user-visible this isn't considered a brea
   `HTTP_JSON_V1` when explicitly setting the `AMBASSADOR_ENVOY_API_VERSION=V2` environment variable
   to force use of xDS v2 to configure Envoy.
 
+- Feature: It is now possible to set `custom_tags` in the `TracingService`. Trace tags can be set
+  based on literal values, environment variables, or request headers. (Thanks to <a
+  href="https://github.com/psalaberria002">Paul</a>!) ([#4181])
+
 [#4179]: https://github.com/emissary-ingress/emissary/pull/4179
 [#1743]: https://github.com/emissary-ingress/emissary/issues/1743
+[#4181]: https://github.com/emissary-ingress/emissary/pull/4181
 
 ## [2.2.2] February 25, 2022
 [2.2.2]: https://github.com/emissary-ingress/emissary/compare/v2.2.1...v2.2.2
