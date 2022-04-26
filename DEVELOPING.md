@@ -788,13 +788,17 @@ If you want to run the Go tests for `cmd/entrypoint`, you'll need `diagd`
 in your `PATH`. See the instructions below about `Setting up diagd` to do
 that.
 
-| Group           | Command                                                             |
-|-----------------|---------------------------------------------------------------------|
-| All Tests       | `make test`                                                         |
-| All Golang      | `make gotest`                                                       |
-| All Python      | `make pytest`                                                       |
+> A local registry container will be started and runs on port 5000. On newer Macs that port
+> is used by Airplay Receiver. If you have this turned on it will cause the registry container to hang
+> 
+
+| Group           | Command                                                                |
+| --------------- | ---------------------------------------------------------------------- |
+| All Tests       | `make test`                                                            |
+| All Golang      | `make gotest`                                                          |
+| All Python      | `make pytest`                                                          |
 | Some/One Golang | `make gotest GOTEST_PKGS=./cmd/entrypoint GOTEST_ARGS="-run TestName"` |
-| Some/One Python | `make pytest PYTEST_ARGS="-k TestName"`                             |
+| Some/One Python | `make pytest PYTEST_ARGS="-k TestName"`                                |
 
 Please note the python tests use a local cache to speed up test
 results. If you make a code update that changes the generated envoy
