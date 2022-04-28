@@ -238,6 +238,7 @@ class IRHTTPMappingGroup (IRBaseMappingGroup):
         if not cluster:
             # OK, we have to actually do some work.
             self.ir.logger.debug(f"IRHTTPMappingGroup: synthesizing Cluster for {mapping.name}")
+            self.ir.logger.debug("health check for irhttpmappinggroup: {}".format(mapping.get('health_checks', 'sadtime')))
             cluster = IRCluster(ir=self.ir, aconf=self.ir.aconf,
                                 parent_ir_resource=mapping,
                                 location=mapping.location,
@@ -245,6 +246,8 @@ class IRHTTPMappingGroup (IRBaseMappingGroup):
                                 resolver=mapping.resolver,
                                 ctx_name=mapping.get('tls', None),
                                 dns_type=mapping.get('dns_type', 'strict_dns'),
+                                health_checks=mapping.get('health_checks', None),
+                                health_check_port=mapping.get('health_check_port', None),
                                 host_rewrite=mapping.get('host_rewrite', False),
                                 enable_ipv4=mapping.get('enable_ipv4', None),
                                 enable_ipv6=mapping.get('enable_ipv6', None),
