@@ -728,14 +728,17 @@ class IR:
             # Ignore anything that doesn't at least have a public half.
             #
             # (We include 'user_key' here because ACME private keys use that, and they
-            # should not generate errors.)
+            # should not generate errors.) XXX go straight to saved_secrets here.
             if aconf_secret.get('tls_crt') or aconf_secret.get('cert-chain_pem') or aconf_secret.get('user_key'):
                 secret_info = SecretInfo.from_aconf_secret(aconf_secret)
                 secret_name = secret_info.name
                 secret_namespace = secret_info.namespace
 
-                self.logger.debug('saving "%s.%s" (from %s) in secret_info', secret_name, secret_namespace, secret_key)
-                self.secret_info[f'{secret_name}.{secret_namespace}'] = secret_info
+                full_name = f"secret/{secret_namespace}/{secret_name}"
+                self.logger.debug('saving "%s" (from %s) in secret_info', full_name, secret_key)
+                self.secret_info[full_name] = secret_info
+
+        self.logger.debug(f"IR: secret_info secrets:\n%s", "\n  ".join(self.secret_info.keys()))
 
     def save_tls_context(self, ctx: IRTLSContext) -> None:
         extant_ctx = self.tls_contexts.get(ctx.name, None)
@@ -773,7 +776,7 @@ class IR:
 
     def resolve_secret(self, resource: IRResource, secret_name: str, namespace: str):
         # OK. Do we already have a SavedSecret for this?
-        ss_key = f'{secret_name}.{namespace}'
+        ss_key = f'secret/{namespace}/{secret_name}'
 
         ss = self.saved_secrets.get(ss_key, None)
 
@@ -808,6 +811,7 @@ class IR:
 
             # Save this for next time.
             self.saved_secrets[secret_name] = ss
+
         return ss
 
     def resolve_resolver(self, cluster: IRCluster, resolver_name: Optional[str]) -> IRServiceResolver:

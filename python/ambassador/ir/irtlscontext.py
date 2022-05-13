@@ -216,8 +216,6 @@ class IRTLSContext(IRResource):
                 if ss.root_cert_path:
                     self.secret_info['cacert_chain_file'] = ss.root_cert_path
 
-        self.ir.logger.debug("TLSContext - successfully processed the cert_chain_file, private_key_file, and cacert_chain_file: %s" % self.secret_info)
-
         # OK. Repeat for the ca_secret_name.
         ca_secret_name = self.secret_info.get('ca_secret')
 
@@ -232,7 +230,7 @@ class IRTLSContext(IRResource):
             # They gave a secret name for the validation cert. Try loading it.
             ss = self.resolve_secret(ca_secret_name)
 
-            self.ir.logger.debug("resolve_secrets: IR returned secret %s as %s" % (ca_secret_name, ss))
+            self.ir.logger.debug("resolve_secrets: IR returned CA secret %s as %s" % (ca_secret_name, ss))
 
             if not ss:
                 # This is definitively an error: they mentioned a secret, it can't be loaded,
@@ -275,14 +273,20 @@ class IRTLSContext(IRResource):
         for key in [ 'cert_chain_file', 'private_key_file', 'cacert_chain_file' ]:
             path = self.secret_info.get(key, None)
 
-            if path:
-                fc = getattr(self.ir, 'file_checker')
-                if not fc(path):
-                    self.post_error("TLSContext %s found no %s '%s'" % (self.name, key, path))
+            if not path:
+                # Whut.
+                if key != 'cacert_chain_file' and self.get('hosts', None):
+                    self.post_error("TLSContext %s is missing %s" % (self.name, key))
                     errors += 1
-            elif key != 'cacert_chain_file' and self.get('hosts', None):
-                self.post_error("TLSContext %s is missing %s" % (self.name, key))
-                errors += 1
+
+            # if path:
+            #     fc = getattr(self.ir, 'file_checker')
+            #     if not fc(path):
+            #         self.post_error("TLSContext %s found no %s '%s'" % (self.name, key, path))
+            #         errors += 1
+            # elif key != 'cacert_chain_file' and self.get('hosts', None):
+            #     self.post_error("TLSContext %s is missing %s" % (self.name, key))
+            #     errors += 1
 
         if errors > 0:
             return False
