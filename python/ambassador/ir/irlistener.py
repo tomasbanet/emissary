@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING, NamedTuple
 
 import copy
 import json
@@ -16,11 +16,13 @@ if TYPE_CHECKING:
     from .ir import IR # pragma: no cover
 
 
+
 class IRListener (IRResource):
     """
     IRListener is a pretty direct translation of the Ambassador Listener resource.
     """
 
+    socket_protocol: str # tcp or udp
     bind_address: str       # Often "0.0.0.0", but can be overridden.
     service_port: int
     use_proxy_proto: bool
@@ -30,6 +32,7 @@ class IRListener (IRResource):
     namespace_literal: str  # Literal namespace to be matched
     namespace_selector: Dict[str, str]  # Namespace selector
     host_selector: Dict[str, str]   # Host selector
+    http3_enabled: bool # when socket_protocol is udp and http exist in protocol chain
 
     AllowedKeys = {
         'bind_address',
@@ -133,6 +136,17 @@ class IRListener (IRResource):
             ir.logger.debug(f"Listener {self.name} forcing pstack {';'.join(pstack)}")
             self.protocolStack = pstack
 
+        # determine socket protocol (layer 4 - tcp/udp) based on assigned protocolStack
+        # we know at this point a default protocolStack exists or was provided by the user
+        # so we do not need to check list length before indexing the last item
+        self.socket_protocol= self.protocolStack[-1]
+
+        if self.socket_protocol not in {"TCP", "UDP"}:
+            self.post_error("TCP or UDP should be the last protocol in the protocolStack. Unable to determine socket protocol for listener %s", self.name)
+            return False
+
+        # self.http3_enabled = (self.socket_protocol == "UDP") & {"HTTP", "TLS"}.issubset(self.protocolStack)
+        
         if not securityModel:
             self.post_error("securityModel is required")
             return False
@@ -263,14 +277,14 @@ class IRListener (IRResource):
 
         if self.namespace_selector:
             nsstr = "; ".join([ f"{k}={v}" for k, v in self.namespace_selector.items() ])
-
-        return "<Listener %s on %s:%d (%s -- %s) ns %s sel %s, host sel %s (statsPrefix %s)>" % \
-               (self.name, self.bind_address, self.port, securityModel, pstack,
+        
+        return "<Listener %s on %s://%s:%d (%s -- %s) ns %s sel %s, host sel %s (statsPrefix %s)>" % \
+               (self.name, self.socket_protocol.lower(), self.bind_address, self.port, securityModel, pstack,
                 self.namespace_literal, nsstr, hsstr, self.statsPrefix)
 
     # Deliberately matches IRTCPMappingGroup.bind_to()
     def bind_to(self) -> str:
-        return f"{self.bind_address}-{self.port}"
+        return f"{self.socket_protocol.lower()}-{self.bind_address}-{self.port}"
 
 
 class ListenerFactory:
@@ -297,93 +311,6 @@ class ListenerFactory:
 
     @classmethod
     def finalize(cls, ir: 'IR', aconf: Config) -> None:
-        # If we have no listeners at all, add the default listeners.
-        # if not ir.listeners:
-        #     # Do we have any Hosts using TLS?
-        #     tls_active = False
-
-        #     for host in ir.hosts.values():
-        #         if host.context:
-        #             tls_active = True
-
-        #     if tls_active:
-        #         ir.logger.debug("ListenerFactory: synthesizing default listeners (TLS)")
-
-        #         # Add the default HTTP listener.
-        #         #
-        #         # We use protocol HTTPS here so that the TLS inspector is active; that
-        #         # lets us make better decisions about the security of a given request.
-        #         ir.save_listener(IRListener(
-        #             ir, aconf, "-internal-", f"ambassador-listener-8080", "-internal-",
-        #             port=8080,
-        #             protocol="HTTPS",   # Not a typo! See above.
-        #             securityModel="XFP",
-        #             hostBinding={
-        #                 "namespace": {
-        #                     "from": "SELF"
-        #                 }
-        #             }
-        #         ))
-
-        #         # Add the default HTTPS listener.
-        #         ir.save_listener(IRListener(
-        #             ir, aconf, "-internal-", "ambassador-listener-8443", "-internal-",
-        #             port=8443,
-        #             protocol="HTTPS",
-        #             securityModel="XFP",
-        #             hostBinding={
-        #                 "namespace": {
-        #                     "from": "SELF"
-        #                 }
-        #             }
-        #         ))
-        #     else:
-        #         ir.logger.debug("ListenerFactory: synthesizing default listener (cleartext)")
-
-        #         # Add the default HTTP listener.
-        #         #
-        #         # We use protocol HTTP here because no, we don't want TLS active.
-        #         ir.save_listener(IRListener(
-        #             ir, aconf, "-internal-", "ambassador-listener-8080", "-internal-",
-        #             port=8080,
-        #             protocol="HTTP",   # Not a typo! See above.
-        #             securityModel="XFP",
-        #             hostBinding={
-        #                 "namespace": {
-        #                     "from": "SELF"
-        #                 }
-        #             }
-        #         ))
-
-        # # After that, cycle over our Hosts and see if any refer to
-        # # insecure.additionalPorts that don't already have Listeners.
-        # for host in ir.get_hosts():
-        #     # Hosts don't choose bind addresses, so if we see an insecure_addl_port,
-        #     # look for it on Config.envoy_bind_address.
-        #     if (host.insecure_addl_port is not None) and (host.insecure_addl_port > 0):
-        #         listener_key = f"{Config.envoy_bind_address}-{host.insecure_addl_port}"
-
-        #         if listener_key not in ir.listeners:
-        #             ir.logger.debug("ListenerFactory: synthesizing listener for Host %s insecure.additionalPort %d",
-        #                             host.hostname, host.insecure_addl_port)
-
-        #             name = "insecure-for-%d" % host.insecure_addl_port
-
-        #             # Note that we don't specify the bind address here, so that it
-        #             # lands on Config.envoy_bind_address.
-        #             ir.save_listener(IRListener(
-        #                 ir, aconf, "-internal-", name, "-internal-",
-        #                 port=host.insecure_addl_port,
-        #                 protocol="HTTPS",   # Not a typo! See "Add the default HTTP listener" above.
-        #                 securityModel="INSECURE",
-        #                 insecure_only=True,
-        #                 hostBinding={
-        #                     "namespace": {
-        #                         "from": "SELF"
-        #                     }
-        #                 }
-        #             ))
-
         # Finally, cycle over our TCPMappingGroups and make sure we have
         # Listeners for all of them, too.
         for group in ir.ordered_groups():

@@ -91,7 +91,7 @@ class IR:
     hosts: Dict[str, IRHost]
     invalid: List[Dict]
     invalidate_groups_for: List[str]
-    # The key for listeners is "{bindaddr}-{port}" (see IRListener.bind_to())
+    # The key for listeners is "{socket_protocol}-{bindaddr}-{port}" (see IRListener.bind_to())
     listeners: Dict[str, IRListener]
     log_services: Dict[str, IRLogService]
     ratelimit: Optional[IRRateLimit]
@@ -271,8 +271,6 @@ class IR:
         self.groups = {}
         self.grpc_services = {}
         self.hosts = {}
-        # self.invalidate_groups_for is handled above.
-        # self.k8s_status_updates is handled below.
         self.listeners = {}
         self.log_services = {}
         self.outliers = {}
@@ -327,6 +325,22 @@ class IR:
 
         # After TLSContexts, grab Listeners...
         ListenerFactory.load_all(self, aconf)
+        
+        # mark listener as http3_enabled for a bind_address and port combination when the following occurs:
+        # when socket_protocol is UDP it is assumed to be an http/3 endpoint, raw UDP is not supported at this time
+        # When socket_protocol is TCP and UDP Listener exists then marking as http/3 enabled so that the "alt-svc" header can be injected.
+
+        for listener in self.listeners.values():
+            http3_enabled = False
+            if listener.socket_protocol == "UDP":
+                http3_enabled = True
+            else:
+                udp_protocol_key = f"udp-{listener.bind_address}-{listener.port}"
+                if self.listeners.get(udp_protocol_key):
+                    http3_enabled = True
+
+            listener.http3_enabled = http3_enabled
+            
 
         # ...then grab whatever we know about Hosts...
         HostFactory.load_all(self, aconf)
@@ -478,11 +492,9 @@ class IR:
                 # to shred any cached cluster with this mangled_name, because the mangled_name
                 # can change as new clusters appear! This is obviously not ideal.
                 #
-                # XXX This is doubly a hack because it's duplicating this magic format from
-                # v2cluster.py and v3cluster.py.
-                self.cache.invalidate(f"V2-{cluster.cache_key}")
+                # XXX This is doubly a hack because it's duplicating this magic format from v3cluster.py.        
                 self.cache.invalidate(f"V3-{cluster.cache_key}")
-                self.cache.dump("Invalidate clusters V2-%s, V3-%s", cluster.cache_key, cluster.cache_key)
+                self.cache.dump("Invalidate clusters for V3-%s", cluster.cache_key)
 
                 # OK. Finally, we can update the envoy_name.
                 cluster['envoy_name'] = mangled_name
@@ -869,12 +881,12 @@ class IR:
     def save_listener(self, listener: IRListener) -> None:
         listener_key = listener.bind_to()
 
-        extant_listener = self.listeners.get(listener_key, None)
         is_valid = True
-
+        extant_listener = self.listeners.get(listener_key, None)
+    
         if extant_listener:
-            self.post_error("Duplicate listener %s on %s:%d; keeping definition from %s" %
-                            (listener.name, listener.bind_address, listener.port, extant_listener.location))
+            self.post_error("Duplicate listener %s on %s://%s:%d; keeping definition from %s" %
+                            (listener.name, listener.socket_protocol, listener.bind_address, listener.port, extant_listener.location))
             is_valid = False
 
         if is_valid:
