@@ -151,16 +151,22 @@ class IRListener (IRResource):
         self.reuse_port = False
         self.http3_enabled = False
         self.http3_options = self.get("http3Options", {})
-        
+
         # To allow for future raw UDP support we must check whether the protocolStack includes HTTP.
         # Having both HTTP and UDP will indicate that the QUIC protocol should be used vs raw UDP forwarding
-        if (self.socket_protocol == "UDP"):
-            if ("HTTP" in self.protocolStack):
+        if self.socket_protocol == "UDP":
+            if "HTTP" in self.protocolStack:
                 self.http3_enabled = True
                 self.reuse_port = True
             else:
                 self.post_error(f"UDP is only supported with HTTP. Invalid protocolStack for listener {self.name}")
                 return False
+        elif (self.socket_protocol == "TCP") & ("HTTP" in self.protocolStack) & bool(self.http3_options):
+            # when http is enabled on TCP and user has set explicit HTTP3 settings then we assume they
+            # want to advertise http3 support. Note: it is still up to the developer to ensure a valid
+            # Listener for http/3 is configured
+            self.http3_enabled = True
+                
 
         if not securityModel:
             self.post_error("securityModel is required")

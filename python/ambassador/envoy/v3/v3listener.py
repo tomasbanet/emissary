@@ -1048,11 +1048,13 @@ class V3Listener(dict):
         listener: dict = {
             "name": self.name,
             "address": self.address,
-            "enable_reuse_port": self.reuse_port,
             "udp_listener_config": {},
             "filter_chains": self._filter_chains,
             "traffic_direction": self.traffic_direction
         }
+
+        if self.reuse_port == True:
+            listener['enable_reuse_port'] = self.reuse_port
 
         if self.isProtocolUDP():
             listener['udp_listener_config'] = {

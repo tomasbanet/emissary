@@ -1,8 +1,39 @@
 from dataclasses import dataclass
-from tests.utils import Compile, logger
+from tests.utils import Compile, logger, default_http3_listener_manifest, econf_compile
 from typing import List, Optional
 
+from ambassador import IR
+from ambassador.compile import Compile
+from ambassador.config import Config
+from ambassador.fetch import ResourceFetcher
+from ambassador.envoy import EnvoyConfig
+from ambassador.utils import EmptySecretHandler
+
 import pytest
+
+def _ensure_alt_svc_header_injected(listener, expectedAltSvc):
+    """helper function to ensure that the alt-svc header is getting injected properly"""
+    filter_chains = listener['filter_chains']
+
+    for filter_chain in filter_chains:
+        hcm_typed_config =  filter_chain['filters'][0]['typed_config']
+        virtual_hosts = hcm_typed_config['route_config']['virtual_hosts']
+        for host in virtual_hosts:
+            response_headers_to_add = host['response_headers_to_add']
+            assert len(response_headers_to_add) == 1
+            header = response_headers_to_add[0]['header']
+            assert header['key'] == 'alt-svc'
+            assert header['value'] == expectedAltSvc
+
+def _verify_no_added_response_headers(listener):
+    """helper function to ensure response_headers_to_add do not exist """
+    filter_chains = listener['filter_chains']
+
+    for filter_chain in filter_chains:
+        hcm_typed_config =  filter_chain['filters'][0]['typed_config']
+        virtual_hosts = hcm_typed_config['route_config']['virtual_hosts']
+        for host in virtual_hosts:
+            assert 'response_headers_to_add' not in host
 
 
 def _generateListener(name: str, protocol: Optional[str], protocol_stack:Optional[List[str]]):
@@ -64,4 +95,276 @@ class TestListener:
             else:
                 assert len(listeners) == 1
                 assert listeners[0].socket_protocol == case.expectedSocketProtocol
+
+    @pytest.mark.compilertest
+    def test_http3_valid_quic_listener(self):
+        """ensure that a valid http3 listener is created using QUIC"""
+
+        yaml = default_http3_listener_manifest()
+        econf = econf_compile(yaml)
+
+        listeners = econf['static_resources']['listeners']
+
+        assert len(listeners) == 1
+
+        # verify listener options
+        listener = listeners[0]
+        assert listener['enable_reuse_port'] == True
+        assert 'udp_listener_config' in listener
+        assert 'quic_options' in listener['udp_listener_config']
+        assert listener['udp_listener_config']["downstream_socket_config"]['prefer_gro'] == True
+
+        # verify filter chains
+        filter_chains = listener['filter_chains']
+        assert len(filter_chains) == 1
+        filter_chain = filter_chains[0]
+
+        assert filter_chain['filter_chain_match']['transport_protocol'] == 'quic'
+        assert filter_chain['transport_socket']['name'] == 'envoy.transport_sockets.quic'
+ 
+        # verify HCM typed_config
+        typed_config = filter_chain['filters'][0]['typed_config']
+        assert typed_config['codec_type'] == "HTTP3"
+        assert 'http3_protocol_options' in typed_config
+
+    @pytest.mark.compilertest
+    def test_http3_missing_tls_context(self):
+        """UDP listener supporting the Quic protocol requires that a the "transport_socket" be set 
+        in the filter_chains due to the fact that QUIC requires TLS. Envoy will reject the configuration
+        if it is not found. This test ensures that the HTTP/3 Listener is dropped when a valid TLSContext is not available.
+        """
+
+        yaml = """
+---
+apiVersion: getambassador.io/v3alpha1
+kind: Listener
+metadata:
+  name: listener-8443
+  namespace: default
+spec:
+  port: 8443
+  protocol: HTTPS
+  securityModel: XFP
+  hostBinding:
+    namespace:
+      from: ALL
+""" + default_http3_listener_manifest()
+
+        ## we don't use the Compile utils here because we want to make sure that a fake secret is not injected
+        aconf = Config()
+        fetcher = ResourceFetcher(logger, aconf)
+        fetcher.parse_yaml(yaml, k8s=True)
+        aconf.load_all(fetcher.sorted())
+        secret_handler = EmptySecretHandler(logger, source_root=None, cache_dir=None, version='V3')
+        ir = IR(aconf, secret_handler=secret_handler)
+        econf = EnvoyConfig.generate(ir, version='V3', cache=None).as_dict()
     
+        # the tcp/tls is more forgiving and doesn't crash envoy which is the current behavior 
+        # we observe pre v3. So we just verify that the only listener is the TCP listener.
+        listeners = econf['static_resources']['listeners']
+        assert len(listeners) == 1
+        tcp_listener = listeners[0]
+        assert tcp_listener['address']['socket_address']['protocol'] == "TCP"
+
+
+    @pytest.mark.compilertest
+    def test_http3_companion_listeners(self):
+        """ensure that when we have companion http3 (udp)/tcp listeners bound to same port that we properly set
+            port reuse, and ensure the TCP listener broadcast http/3 support
+        """
+
+        yaml = """
+---
+apiVersion: getambassador.io/v3alpha1
+kind: Listener
+metadata:
+  name: listener-8443
+  namespace: default
+spec:
+  port: 8443
+  protocol: HTTPS
+  securityModel: XFP
+  hostBinding:
+    namespace:
+      from: ALL
+""" + default_http3_listener_manifest()
+
+        econf = econf_compile(yaml)
+
+        listeners = econf['static_resources']['listeners']
+
+        assert len(listeners) == 2
+
+        ## check TCP Listener
+        tcp_listener = listeners[0]
+        assert tcp_listener['address']['socket_address']['protocol'] == "TCP"
+        assert tcp_listener['enable_reuse_port'] == True
+
+        tcp_filter_chains = tcp_listener['filter_chains']
+        assert len(tcp_filter_chains) == 2
+     
+
+        default_alt_svc = "h3=\":443\"; ma=86400, h3-29=\":443\"; ma=86400"
+        _ensure_alt_svc_header_injected(tcp_listener, default_alt_svc)
+       
+        ## check UDP Listener
+        udp_listener = listeners[1]
+        assert udp_listener['address']['socket_address']['protocol'] == "UDP"
+        assert udp_listener['enable_reuse_port'] == True
+
+        udp_filter_chains = udp_listener['filter_chains']
+        assert len(udp_filter_chains) == 1
+
+        _verify_no_added_response_headers(udp_listener)
+
+    @pytest.mark.compilertest
+    def test_http3_non_matching_ports(self):
+        """support having the http (tcp) listener to be bound to different address:port, by default
+            the alt-svc will not be injected. Note, this test ensures that envoy can be configured
+            this way and will not crash. However, due to developer not setting the `alt-svc` most clients
+            will not be able to upgrade to HTTP/3.
+        """
+
+        yaml = """
+---
+apiVersion: getambassador.io/v3alpha1
+kind: Listener
+metadata:
+  name: listener-8500
+  namespace: default
+spec:
+  port: 8500
+  protocol: HTTPS
+  securityModel: XFP
+  hostBinding:
+    namespace:
+      from: ALL
+""" + default_http3_listener_manifest()
+
+        econf = econf_compile(yaml)
+
+        listeners = econf['static_resources']['listeners']
+
+        assert len(listeners) == 2
+
+        ## check TCP Listener
+        tcp_listener = listeners[0]
+        assert tcp_listener['address']['socket_address']['protocol'] == "TCP"
+        assert 'enable_reuse_port' not in tcp_listener
+
+        tcp_filter_chains = tcp_listener['filter_chains']
+        assert len(tcp_filter_chains) == 2
+
+        _verify_no_added_response_headers(tcp_listener)
+       
+        ## check UDP Listener
+        udp_listener = listeners[1]
+        assert udp_listener['address']['socket_address']['protocol'] == "UDP"
+        assert udp_listener['enable_reuse_port'] == True
+
+        udp_filter_chains = udp_listener['filter_chains']
+        assert len(udp_filter_chains) == 1
+
+        _verify_no_added_response_headers(udp_listener)
+
+    @pytest.mark.compilertest
+    def test_http3_non_matching_ports_altsvc_override(self):
+        """ensure the developer can override the alt-svc header when non-matching ports are used
+        """
+        yaml = """
+---
+apiVersion: getambassador.io/v3alpha1
+kind: Listener
+metadata:
+  name: listener-8500
+  namespace: default
+spec:
+  port: 8500
+  protocol: HTTPS
+  securityModel: XFP
+  hostBinding:
+    namespace:
+      from: ALL
+  http3Options:
+    altSvc: h3=":10000"; ma=86400
+    
+""" + default_http3_listener_manifest()
+
+        econf = econf_compile(yaml)
+
+        listeners = econf['static_resources']['listeners']
+
+        assert len(listeners) == 2
+
+        ## check TCP Listener
+        tcp_listener = listeners[0]
+        assert tcp_listener['address']['socket_address']['protocol'] == "TCP"
+        assert 'enable_reuse_port' not in tcp_listener
+
+        tcp_filter_chains = tcp_listener['filter_chains']
+        assert len(tcp_filter_chains) == 2
+
+        custom_alt_svc = "h3=\":10000\"; ma=86400"
+        _ensure_alt_svc_header_injected(tcp_listener, custom_alt_svc)
+       
+        ## check UDP Listener
+        udp_listener = listeners[1]
+        assert udp_listener['address']['socket_address']['protocol'] == "UDP"
+        assert udp_listener['enable_reuse_port'] == True
+
+        udp_filter_chains = udp_listener['filter_chains']
+        assert len(udp_filter_chains) == 1
+
+        _verify_no_added_response_headers(udp_listener)
+    
+    @pytest.mark.compilertest
+    def test_http3_companion_listeners_altsvc_override(self):
+        """ensure that when a companion listener between udp/tcp is found that the user can override the default atl-svc header
+        """
+
+        yaml = """
+---
+apiVersion: getambassador.io/v3alpha1
+kind: Listener
+metadata:
+  name: listener-8443
+  namespace: default
+spec:
+  port: 8443
+  protocol: HTTPS
+  securityModel: XFP
+  hostBinding:
+    namespace:
+      from: ALL
+  http3Options:
+    altSvc: h3=":10000"; ma=86400
+""" + default_http3_listener_manifest()
+
+        econf = econf_compile(yaml)
+
+        listeners = econf['static_resources']['listeners']
+
+        assert len(listeners) == 2
+
+        ## check TCP Listener
+        tcp_listener = listeners[0]
+        assert tcp_listener['address']['socket_address']['protocol'] == "TCP"
+        assert tcp_listener['enable_reuse_port'] == True
+
+        tcp_filter_chains = tcp_listener['filter_chains']
+        assert len(tcp_filter_chains) == 2
+     
+
+        default_alt_svc = "h3=\":10000\"; ma=86400"
+        _ensure_alt_svc_header_injected(tcp_listener, default_alt_svc)
+       
+        ## check UDP Listener
+        udp_listener = listeners[1]
+        assert udp_listener['address']['socket_address']['protocol'] == "UDP"
+        assert udp_listener['enable_reuse_port'] == True
+
+        udp_filter_chains = udp_listener['filter_chains']
+        assert len(udp_filter_chains) == 1
+
+        _verify_no_added_response_headers(udp_listener)
+
