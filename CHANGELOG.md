@@ -92,6 +92,13 @@ it will be removed; but as it won't be user-visible this isn't considered a brea
   variable is now a misnomer, as it no longer configures which xDS API version is used, but it still
   affects what the default protocol used for a `TracingService` that points at Zipkin.
 
+- Change: With the ugprade to Envoy 1.22, Emissary-ingress no longer supports the V2 transport
+  protocol. The `AuthService`, `LogService` and the `RateLimitService`  will only support the v3
+  protocol_version. If protocol_version is not specified, the default  value of `v2` will cause an
+  error to be posted. Therefore, you will need to set it to `protocol_version: "v3"`. If upgrading
+  from a previous version you will want  to set it to "v3" and ensure it is working before upgrading
+  to Emissary-ingress 3.Y.
+
 ## [2.3.1] June 09, 2022
 [2.3.1]: https://github.com/emissary-ingress/emissary/compare/v2.3.0...v2.3.1
 

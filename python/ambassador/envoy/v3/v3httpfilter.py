@@ -268,7 +268,6 @@ def V3HTTPFilter_authv1(auth: IRAuth, v3config: 'V3Config'):
         }
 
     if auth.proto == "grpc":
-        protocol_version = auth.get('protocol_version', 'v2')
         auth_info = {
             'name': 'envoy.filters.http.ext_authz',
             'typed_config': {
@@ -279,7 +278,7 @@ def V3HTTPFilter_authv1(auth: IRAuth, v3config: 'V3Config'):
                     },
                     'timeout': "%0.3fs" % (float(auth.timeout_ms) / 1000.0)
                 },
-                'transport_api_version': protocol_version.replace("alpha", "").upper(),
+                'transport_api_version': auth.protocol_version.upper(),
             }
         }
 
