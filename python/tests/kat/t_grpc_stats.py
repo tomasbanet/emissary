@@ -73,7 +73,7 @@ service: http://127.0.0.1:8877
             'envoy_cluster_grpc_Echo_success',
             'envoy_cluster_grpc_Echo_total',
             # present only when enable_upstream_stats is true
-            'envoy_cluster_grpc_EchoService_upstream_rq_time'
+            'envoy_cluster_grpc_Echo_upstream_rq_time'
         ]
 
         # these metrics SHOULD NOT be there based on the filter config
