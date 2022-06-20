@@ -793,14 +793,9 @@ config:
 
         tracelist = { x: True for x in self.results[101].backend.response }
 
-        assert 'router cluster_tracingtestzipkinv1_http_default egress' in tracelist
+        assert 'router cluster_tracingtestzipkinv1_http_default egress' not in tracelist
 
         # Look for the host that we actually queried, since that's what appears in the spans.
         assert self.results[0].backend
         assert self.results[0].backend.request
-        assert self.results[0].backend.request.host in tracelist
-
-        # Ensure we generate 128-bit traceids by default
-        trace = self.results[102].json[0][0]
-        traceId = trace['traceId']
-        assert len(traceId) == 32
+        assert self.results[0].backend.request.host not in tracelist
