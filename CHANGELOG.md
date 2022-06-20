@@ -73,7 +73,7 @@ it will be removed; but as it won't be user-visible this isn't considered a brea
 ## RELEASE NOTES
 
 ## [3.0.0] TBD
-[3.0.0]: https://github.com/emissary-ingress/emissary/compare/v2.3.1...v3.0.0
+[3.0.0]: https://github.com/emissary-ingress/emissary/compare/v2.3.2...v3.0.0
 
 ### Emissary-ingress and Ambassador Edge Stack
 
@@ -91,6 +91,15 @@ it will be removed; but as it won't be user-visible this isn't considered a brea
   Note that the `AMBASSADOR_ENVOY_API_VERSION` environment
   variable is now a misnomer, as it no longer configures which xDS API version is used, but it still
   affects what the default protocol used for a `TracingService` that points at Zipkin.
+
+## [2.3.2] TBD
+[2.3.2]: https://github.com/emissary-ingress/emissary/compare/v2.3.1...v2.3.2
+
+### Emissary-ingress and Ambassador Edge Stack
+
+- Bugfix: A regression was introduced in 2.3.0 causing the agent to miss some of the metrics coming
+  from emissary ingress before sending them to Ambassador cloud. This issue has been resolved to
+  ensure that all the nodes composing the emissary ingress cluster are reporting properly.
 
 ## [2.3.1] June 09, 2022
 [2.3.1]: https://github.com/emissary-ingress/emissary/compare/v2.3.0...v2.3.1

@@ -54,6 +54,17 @@ items:
           Note that the <code>AMBASSADOR_ENVOY_API_VERSION</code> environment variable is now a
           misnomer, as it no longer configures which xDS API version is used, but it still affects
           what the default protocol used for a <code>TracingService</code> that points at Zipkin.
+
+  - version: 2.3.2
+    date: 'TBD'
+    notes:
+      - title: fix regression in the agent for the metrics transfer.
+        type: bugfix
+        body: >-
+          A regression was introduced in 2.3.0 causing the agent to miss some of the metrics coming from
+          emissary ingress before sending them to Ambassador cloud. This issue has been resolved to ensure
+          that all the nodes composing the emissary ingress cluster are reporting properly.
+
   - version: 2.3.1
     date: '2022-06-09'
     notes:
