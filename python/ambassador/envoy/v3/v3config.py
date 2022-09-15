@@ -19,11 +19,11 @@ from ...cache import Cache, NullCache
 from ..common import EnvoyConfig, sanitize_pre_json
 from .v3_static_resources import V3StaticResources
 from .v3admin import V3Admin
-from .v3ready import V3Ready
 from .v3bootstrap import V3Bootstrap
 from .v3cluster import V3Cluster
 from .v3listener import V3Listener
 from .v3ratelimit import V3RateLimit
+from .v3ready import V3Ready
 from .v3route import V3Route, V3RouteVariants
 from .v3tracing import V3Tracing
 
