@@ -106,7 +106,7 @@ require (
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4
 	golang.org/x/sys v0.0.0-20220908164124-27713097b956
 	google.golang.org/genproto v0.0.0-20220204002441-d6cc3cc0770e
-	google.golang.org/grpc v1.44.0
+	google.golang.org/grpc v1.51.0
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.2.0
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/yaml.v2 v2.4.0
